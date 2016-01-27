@@ -1,0 +1,6 @@
+smj10.csv is taken from http://www.cvrl.org and based on Stockman, MacLeod & Johnson (1993) 10-deg cone fundamentals (for an equal energy spectrum). Columns are:
+Wavelength (nm)
+log L-cone spectral sensitivity
+log M-cone spectral sensitivity
+log S-cone spectral sensitivity
+For more info, see http://www.cvrl.org/database/text/cones/smj10.htm
