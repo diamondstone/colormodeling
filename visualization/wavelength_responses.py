@@ -1,5 +1,5 @@
 #!/usr/bin/python
-"""Simple 2d graph of SML sensitivity vs. wavelength."""
+"""Parametric graph of LMS responses by wavelength in the plane L+M+S=1."""
 
 import math
 
@@ -28,7 +28,7 @@ def main():
 
   fig.patch.set_visible(False)
   ax.axis('off')
-  # jet colormap is a poor approximation
+  # jet colormap is a poor approximation. In particular, green is in the wrong place.
   # TODO: use a colormodel to compute the closest representable color to the
   # calculated cone responses given a typical RGB monitor.
   colormap = plt.cm.jet
