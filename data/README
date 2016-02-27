@@ -4,3 +4,6 @@ log L-cone spectral sensitivity
 log M-cone spectral sensitivity
 log S-cone spectral sensitivity
 For more info, see http://www.cvrl.org/database/text/cones/smj10.htm
+
+CIE_1931_transform.csv gives the coefficients for the RGB->XYZ transform in the CIE-1931 color space, taken from https://en.wikipedia.org/wiki/CIE_1931_color_space. The resulting vector should also be scaled by 1/b_{21}, where b_{21} is the {2, 1} component of the matrix (0.17697).
+
