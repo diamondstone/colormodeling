@@ -1,5 +1,7 @@
 """Defines colors and the color model interface."""
 
+from __future__ import division
+
 from collections import namedtuple
 
 import numpy as np
@@ -8,7 +10,8 @@ class Color(namedtuple('Color', ['l_response', 'm_response', 's_response'])):
   """Class for representing a color.
 
   I could define a color either perceptually, as a typical trichromatic
-  human's cone responses, or physically, as a map from wavelengths to energies.
+  human's cone responses (the "tristimulus" values), or physically,
+  as a map from wavelengths to energies.
 
   There are advantages and disadvantages to each approach, but I have chosen the
   former option. This has the advantage that colors will be the same iff they
@@ -44,8 +47,39 @@ class ColorModel(object):
     """Map the given representation to the corresponding color."""
     raise NotImplementedError
 
+  def Approximation(self, color):
+      """Find and the return closest representable color to the given one."""
+    raise NotImplementedError
 
-class ThreePrimaryAdditiveColorModel(ColorModel):
+
+class TristimulusColorModel(ColorModel):
+  """Color model of typical (non-colorblind) human color perception.
+  
+  Representations are tristimulus values, using the same Color class,
+  so transformations are all identities.
+  """
+  
+  def IsRepresentable(self, color):
+    """All colors are representable in this model."""
+    return True
+
+  def Representation(self, color):
+    """Map the given color to its representation within the model.
+    
+    Identity function.
+    """
+    return color
+
+  def Color(self, representation):
+    """Map the given representation to the corresponding color."""
+    return representation
+
+  def Approximation(self, color):
+    """Find and the return closest representable color to the given one."""
+    return color
+
+  
+class ThreeAdditivePrimaryColorModel(ColorModel):
   """Color model of colors representable by combining three additive primaries.
   
   Representations are triples of float values indicating the energy of each
@@ -62,10 +96,15 @@ class ThreePrimaryAdditiveColorModel(ColorModel):
     except np.linalg.linalg.LinAlgError:
       raise ValueError('Given primaries must have linearly independent LMS response vectors.')      
 
+  def _AlmostRepresentation(self, color):
+      """How much of the primaries would one need to combine to get the color.
+      Components may be negative for non-representable colors."""
+      # Need column vector.
+      self._encode_matrix * np.matrix(color).getT()
+    
   def IsRepresentable(self, color):
     """Representable colors are positive linear combinations of primaries."""
-    color_vector = np.matrix(color).getT()  # Need column vector.
-    return all(x > 0 for x in self._encode_matrix * color_vector)
+    return all(x > 0 for x in self._AlmostRepresentation(color))
 
   def Representation(self, color):
     """Map the given color to its representation within the model.
@@ -74,8 +113,7 @@ class ThreePrimaryAdditiveColorModel(ColorModel):
     """
     if not self.IsRepresentable(color):
       return None
-    color_vector = np.matrix(color).getT()  # Need column vector.
-    return self._encode_matrix * color_vector
+    return self._AlmostRepresentation(color)
 
   def Color(self, representation):
     """Map the given representation to the corresponding color."""
@@ -83,6 +121,118 @@ class ThreePrimaryAdditiveColorModel(ColorModel):
     # to an array and reshape before we can unpack it.
     return Color(*np.array(self._decode_matrix * representation).reshape(3))
 
+  def Approximation(self, color):
+    """Find and the return closest representable color to the given one."""
+    return self.Color(np.arraymax(self._AlmostRepresentation(color), [0]*3)
+
+
+def _Normalize(self, lms_responses):
+  """Given lms responses, return the normalized responses where sum = 1."""
+  normalization_factor = 1.0 / sum(lms_responses)
+  return [normalization_factor * response for response in lms_responses]
+
+
+class TwoArbitraryWavelengthsColorModel(ColorModel):
+  """Color model which can represent any perceptible color by combining
+  two wavelengths of light at the right power.
+  
+  Most colors can't be realized with a single wavelength of light.
+  Either they're not saturated enough, or they're some shade of purple.
+  However every perceptible color can be realized by adding appropriate powers of two
+  """
+
+  def __init__(self):
+    # Read wavelength response curves into memory, and compute
+    # 1) the slope between the colors at the endpoints, and
+    # 2) the wavelength of the point furthest from that line.
+    self._wavelength_responses = np.genfromtxt(
+        'data/smj10.csv', delimiter=',',
+        names=['wavelength', 'L_response', 'M_response', 'S_response'])
+    self._normalized_wavelength
+    normalized_violet_response = _Normalize(self._wavelength_responses[0][1:4])
+    normalized_red_response = _Normalize(self._wavelength_responses[-1][1:4])
+    # In the plane of normalized responses, the wavelength responses form an inverted
+    # u shape. If you take any point inside this u, and draw a line through it
+    # parallel to the line between the tips of the u, it will cross the u in exactly two places.
+    # This gives an algorithm for finding two wavelengths which can be combined to match
+    # some realizable LMS response.
+    self._critical_slope = (normalized_red_response[0]-normalized_violet_response[0]) / (
+        normalized_red_response[1]-normalized_violet_response[1])  
+
+  def IsRepresentable(self, color):
+    """Representable colors are perceptible colors, so this model can determine whether a
+    given color is perceptible."""
+    return self.Representation(color) is not None
+
+  def Representation(self, color):
+    """Map the given color to its representation within the model.
+    
+    Representations are dictionaries {wavelength: power} with at most two keys.
+    """
+    raise NotImplementedError
+
+  def _Combine(color_A, power_A, color_B, power_B):
+    """Mix two colors with appropriate powers."""
+    return Color(color_A.l_resonse*power_A + color_B.l_resonse*power_B,
+                 color_A.m_resonse*power_A + color_B.m_resonse*power_B,
+                 color_A.s_resonse*power_A + color_B.s_resonse*power_B)
+
+  def _ColorOfSingleWavelength(self, wavelength):
+    """Map a single wavelength to the tristimulus responses, assuming power = 1."""
+    if wavelength < 380 or wavelength > 770:
+      raise ValueError("%d is not a wavelength of visible light." % wavelength)
+    index = (wavelength - 380) // 5
+    lower_color = Color(self._wavelength_responses[index][1:])
+    if wavelength == 770:
+      return lower_color
+    upper_color = Color(self._wavelength_responses[index + 1][1:])
+    upper_power = (wavelength % 5) / 5
+    lower_power = 1-upper_power
+    return self._Combine(lower_color, lower_power, upper_color, upper_power)
+
+  def Color(self, representation):
+    """Map the given representation to the corresponding color."""
+    raise NotImplementedError
+
+  def Approximation(self, color):
+    """Find and the return closest representable color to the given one."""
+    raise NotImplementedError
+
+
+class CIE1931ColorModel(ColorModel):
+  """CIE 1931 color model. Represent a color with the xyY in CIE color space.
+
+  xyY values are related to XYZ values by:
+  x = X/(X+Y+Z)
+  y = Y/(X+Y+Z)
+  or, in reverse,
+  X = Y*x/y
+  Z = Y*(1-x-y)/y.
+  """
+  
+  def __init__(self):
+    raise NotImplementedError
+
+  def IsRepresentable(self, color):
+    """Representable colors have nonzero m response."""
+    raise NotImplementedError
+
+  def Representation(self, color):
+    """Map the given color to its representation within the model.
+    
+    Representations are three-tuples (x, y, Y).
+    """
+    raise NotImplementedError
+
+  def Color(self, representation):
+    """Map the given representation to the corresponding color."""
+    # decode_matrix * representation is another column vector. We need to convert
+    # to an array and reshape before we can unpack it.
+    raise NotImplementedError
+
+  def Approximation(self, color):
+    """Find and the return closest representable color to the given one."""
+    raise NotImplementedError
 
 # Standard RGB color model. Provides a decent model of what a standard RGB monitor can
 # display, and how it displays it.
@@ -101,11 +251,3 @@ IDEAL_BLUE = Color(1.0, 0.0, 0.0)
 IDEAL_PRIMARIES = (IDEAL_RED, IDEAL_GREEN, IDEAL_BLUE)
 IDEAL_COLOR_MODEL = ThreePrimaryAdditiveColorModel(IDEAL_PRIMARIES)
 
-
-# Useful trick:
-# Every color is representable in the IDEAL_COLOR_MODEL, every IDEAL_COLOR_MODEL
-# representation is also a valid SRGB_COLOR_MODEL representation.
-# SRGB_COLOR_MODEL representations can easily be displayed as colors on a typical
-# monitor.
-# So we can convert from every color to a color we can display in a nice way using:
-# SRGB_COLOR_MODEL.Color(IDEAL_COLOR_MODEL.Representation(color)).
