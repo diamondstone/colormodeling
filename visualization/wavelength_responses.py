@@ -25,6 +25,15 @@ def _LmsToY(l, m, s):
   return m * math.sqrt(3) / 2
 
 
+def Interpolate(values, num):
+  prev = values[0]
+  yield prev
+  for v in values:
+    for i in xrange(1, num+1):
+      yield (prev * (num - i) + v * i) / num
+    prev = v
+
+
 def main():
   data = np.genfromtxt(
     'data/smj10.csv', delimiter=',',
@@ -42,22 +51,15 @@ def main():
   # right similar to the CIE color space.
   xs = _LmsToX(data['L_response'], data['M_response'], data['S_response'])
   ys = _LmsToY(data['L_response'], data['M_response'], data['S_response'])
-  labels = data['wavelength']
+  interpolated_xs = np.array(list(Interpolate(xs, 10)))
+  interpolated_ys = np.array(list(Interpolate(ys, 10)))
 
   fig, ax = plt.subplots()
 
   ax.axis('off')
-  RGB = color_model.BEST_RGB_COLOR_MODEL
-  colors = []
+
+  # Set up labels
   for i in xrange(len(data)):
-    lms = (data['L_response'][i],
-           data['M_response'][i],
-           data['S_response'][i])
-    actual_color = color_model.Color(*lms)
-    rgb_coords = RGB.ApproximateRepresentation(actual_color)
-    scale_factor = 1 / max(rgb_coords)
-    rgb_coords = np.minimum(rgb_coords*scale_factor, np.matrix([1]*3).getT())
-    colors.append(rgb_coords)
     wavelength = data['wavelength'][i]
     if wavelength in {380.0, 720.0, 760.0}: continue
     if wavelength % 20 == 0 or (420 <= wavelength < 520 and wavelength % 10 == 0):
@@ -79,14 +81,27 @@ def main():
         x_offset = -.05 * 1 / (1 + slope**2)**0.5 - .008
         y_offset = -.05 * slope / (1 + slope**2)**0.5 + .02
       plt.annotate(int(wavelength), xy=(x, y), xytext=(x+x_offset, y+y_offset), fontsize=7,
-                   rotation=rotation) 
-      
+                   rotation=rotation)
+
+  # Set up colors
+  RGB = color_model.BEST_RGB_COLOR_MODEL
+  colors = []
+  for i in xrange(len(interpolated_xs)):
+    m = interpolated_ys[i] * 2 / math.sqrt(3)
+    # using l + s + m = 1, and l - s = 2x we have
+    l = (1 - m + 2*interpolated_xs[i])/2
+    s = (1 - m - 2*interpolated_xs[i])/2
+    actual_color = color_model.Color(l, m, s)
+    rgb_coords = RGB.ApproximateRepresentation(actual_color)
+    scale_factor = 1 / max(rgb_coords)
+    rgb_coords = np.minimum(rgb_coords*scale_factor, np.matrix([1]*3).getT())
+    colors.append(rgb_coords)
 
   # Ideally I would just do ax.plot(xs, ys, c=colors) here,
   # but that only accepts a single color, not an array.
   # Instead I create a set of line segments and color them by hand,
   # borrowing the technique from the scipy cookbook.
-  points = np.array([xs, ys]).T.reshape(-1, 1, 2)
+  points = np.array([interpolated_xs, interpolated_ys]).T.reshape(-1, 1, 2)
   segments = np.concatenate([points[:-1], points[1:]], axis=1)
   lc = collections.LineCollection(segments, colors=colors)
   lc.set_linewidth(3)
